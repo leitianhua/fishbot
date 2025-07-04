@@ -7,8 +7,8 @@ import os
 import json
 from loguru import logger
 
-# 导入数据库管理模块（使用绝对导入）
-from utils.database import get_db_instance
+# 导入数据库管理模块（使用相对导入）
+from .database import get_db_instance
 
 
 def get_id_from_url(url):
@@ -119,27 +119,7 @@ class Quark:
             logger.error(f"夸克网盘操作类初始化失败: {e}")
             raise
 
-    def del_expired_resources(self, expired_time):
-        """删除过期资源
-        Args:
-            expired_time: 过期时间（分钟）
-        """
-        try:
-            # 查询过期资源
-            expired_resources = self.db.find_expired_resources(expired_time, "quark")
-            if expired_resources:
-                logger.info(f"找到{len(expired_resources)}个过期资源，准备删除")
-                for resource in expired_resources:
-                    file_id = resource[0]
-                    file_name = resource[1]
-                    logger.info(f"删除过期资源: {file_name}")
-                    # 删除网盘中的文件
-                    self.del_file(file_id)
-                    # 删除数据库记录
-                    self.db.delete_file(file_id)
-                logger.info(f"过期资源清理完成")
-        except Exception as e:
-            logger.error(f"删除过期资源失败: {e}")
+
 
     def copy_file(self, file_id, to_dir_id):
         """复制文件到指定目录

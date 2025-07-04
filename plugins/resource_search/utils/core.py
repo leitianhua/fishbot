@@ -15,11 +15,11 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any, Optional, Tuple
 from loguru import logger
 
-# 导入工具类（使用绝对导入）
-from utils.search import ResourceSearch
-from utils.quark import Quark
-from utils.baidu import Baidu
-from utils.database import get_db_instance
+# 导入工具类（使用相对导入）
+from .search import ResourceSearch
+from .quark import Quark
+from .baidu import Baidu
+from .database import get_db_instance
 
 class ResourceCore:
     """资源搜索核心类"""
@@ -164,8 +164,27 @@ class ResourceCore:
         """清除过期资源的线程函数"""
         while True:
             try:
-                quark = Quark(self.conf)
-                quark.del_expired_resources(self.expired_time)
+                # 在每次循环中重新获取数据库实例，确保线程安全
+                from .database import get_db_instance
+                db_instance = get_db_instance()
+                
+                # 创建新的Quark实例
+                quark_instance = Quark(self.conf)
+                
+                # 查询过期资源
+                expired_resources = db_instance.find_expired_resources(self.expired_time, "quark")
+                if expired_resources:
+                    logger.info(f"找到{len(expired_resources)}个过期资源，准备删除")
+                    for resource in expired_resources:
+                        file_id = resource[0]
+                        file_name = resource[1]
+                        logger.info(f"删除过期资源: {file_name}")
+                        # 删除网盘中的文件
+                        quark_instance.del_file(file_id)
+                        # 删除数据库记录
+                        db_instance.delete_file(file_id)
+                    logger.info(f"过期资源清理完成")
+                
                 time.sleep(60)  # 每分钟执行一次
             except Exception as e:
                 logger.error(f"清除过期资源失败: {e}")

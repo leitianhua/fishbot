@@ -17,9 +17,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
-# 导入核心工具类和数据库（使用绝对导入）
-from utils.core import ResourceCore
-from utils.database import get_db_instance
+# 导入核心工具类和数据库（使用相对导入）
+from .core import ResourceCore
+from .database import get_db_instance
 
 def test_search(keyword):
     """测试搜索功能"""

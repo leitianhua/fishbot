@@ -40,29 +40,11 @@ from datetime import datetime
 from urllib.parse import unquote
 from loguru import logger
 
-# 加载.env文件
-def load_dotenv():
-    try:
-        if os.path.exists(".env"):
-            with open(".env", "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#"):
-                        key, value = line.split("=", 1)
-                        os.environ[key.strip()] = value.strip().strip('"').strip("'")
-            return True
-    except Exception as e:
-        print(f"加载.env文件失败: {e}")
-    return False
-
-# 加载环境变量
-load_dotenv()
-
 # 配置loguru
 # 移除默认处理器
 logger.remove()
-# 设置日志级别，可以通过环境变量控制
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+# 设置日志级别，硬编码方式
+LOG_LEVEL = "INFO"
 # 添加控制台处理器
 logger.add(sys.stderr, level=LOG_LEVEL, 
            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
@@ -70,11 +52,6 @@ logger.add(sys.stderr, level=LOG_LEVEL,
 logger.add("logs/autofish_{time:YYYY-MM-DD}.log", rotation="00:00", retention="7 days", level=LOG_LEVEL, encoding="utf-8")
 
 logger.info(f"日志级别设置为: {LOG_LEVEL}")
-
-# 设置日志
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-# logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-# log = logging.getLogger()
 
 # 是否开启Ai回复
 open_chatai = False

@@ -9,7 +9,7 @@ import os
 import sys
 import toml
 from loguru import logger
-from utils.quark import Quark
+from .utils.quark import Quark
 
 def main():
     """测试夸克网盘功能的主函数"""

@@ -7,6 +7,7 @@
 import os
 import sqlite3
 import logging
+import threading
 from loguru import logger
 from typing import List, Optional, Tuple, Any
 
@@ -24,15 +25,24 @@ class DatabaseManager:
         # 在utils目录下创建数据库
         self.db_path = os.path.join(current_dir, db_name)
         
-        logger.info(f"初始化数据库，路径：{self.db_path}")
-        self.conn = sqlite3.connect(self.db_path)
-        self.cursor = self.conn.cursor()
-        self._create_tables()
+        # 使用线程本地存储
+        self._local = threading.local()
+        
+        # 初始化当前线程的连接
+        self._init_connection()
+    
+    def _init_connection(self):
+        """初始化当前线程的数据库连接"""
+        if not hasattr(self._local, 'conn') or self._local.conn is None:
+            logger.info(f"为线程 {threading.get_ident()} 初始化数据库连接，路径：{self.db_path}")
+            self._local.conn = sqlite3.connect(self.db_path)
+            self._local.cursor = self._local.conn.cursor()
+            self._create_tables()
     
     def _create_tables(self):
         """创建必要的数据表"""
         # 文件转存记录表
-        self.cursor.execute('''
+        self._local.cursor.execute('''
         CREATE TABLE IF NOT EXISTS pan_files (
             file_id TEXT PRIMARY KEY,
             file_name TEXT,
@@ -44,7 +54,7 @@ class DatabaseManager:
         ''')
         
         # 搜索记录表
-        self.cursor.execute('''
+        self._local.cursor.execute('''
         CREATE TABLE IF NOT EXISTS search_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             keyword TEXT,
@@ -53,7 +63,7 @@ class DatabaseManager:
         )
         ''')
         
-        self.conn.commit()
+        self._local.conn.commit()
         logger.debug("数据库表创建完成")
 
     def insert_file(self, file_id: str, file_name: str, file_type: int, share_link: str, pan_type: str = "quark") -> bool:
@@ -69,15 +79,16 @@ class DatabaseManager:
         Returns:
             bool: 操作是否成功
         """
+        self._init_connection()
         sql = 'INSERT OR REPLACE INTO pan_files (file_id, file_name, file_type, share_link, pan_type) VALUES (?, ?, ?, ?, ?)'
         try:
-            self.cursor.execute(sql, (file_id, file_name, file_type, share_link, pan_type))
-            self.conn.commit()
+            self._local.cursor.execute(sql, (file_id, file_name, file_type, share_link, pan_type))
+            self._local.conn.commit()
             logger.debug(f"文件 {file_name} 记录已保存")
             return True
         except Exception as e:
             logger.error(f"保存文件记录失败: {e}")
-            self.conn.rollback()
+            self._local.conn.rollback()
             return False
 
     def delete_file(self, file_id: str) -> bool:
@@ -89,15 +100,16 @@ class DatabaseManager:
         Returns:
             bool: 操作是否成功
         """
+        self._init_connection()
         sql = 'DELETE FROM pan_files WHERE file_id = ?'
         try:
-            self.cursor.execute(sql, (file_id,))
-            self.conn.commit()
+            self._local.cursor.execute(sql, (file_id,))
+            self._local.conn.commit()
             logger.debug(f"文件ID {file_id} 记录已删除")
             return True
         except Exception as e:
             logger.error(f"删除文件记录失败: {e}")
-            self.conn.rollback()
+            self._local.conn.rollback()
             return False
 
     def find_share_link_by_name(self, file_name: str) -> Optional[str]:
@@ -109,10 +121,11 @@ class DatabaseManager:
         Returns:
             Optional[str]: 存在返回分享链接，不存在返回None
         """
+        self._init_connection()
         sql = 'SELECT share_link FROM pan_files WHERE file_name = ?'
         try:
-            self.cursor.execute(sql, (file_name,))
-            result = self.cursor.fetchone()
+            self._local.cursor.execute(sql, (file_name,))
+            result = self._local.cursor.fetchone()
             if result:
                 return result[0]
             return None
@@ -130,21 +143,22 @@ class DatabaseManager:
         Returns:
             List[Tuple[Any, ...]]: 失效的资源列表
         """
+        self._init_connection()
         if pan_type:
             sql = '''
             SELECT * FROM pan_files 
             WHERE (strftime('%s', 'now') - strftime('%s', created_at)) > ?
             AND pan_type = ?
             '''
-            self.cursor.execute(sql, (expired_time * 60, pan_type))
+            self._local.cursor.execute(sql, (expired_time * 60, pan_type))
         else:
             sql = '''
             SELECT * FROM pan_files 
             WHERE (strftime('%s', 'now') - strftime('%s', created_at)) > ?
             '''
-            self.cursor.execute(sql, (expired_time * 60,))
+            self._local.cursor.execute(sql, (expired_time * 60,))
         
-        return self.cursor.fetchall()
+        return self._local.cursor.fetchall()
     
     def record_search(self, keyword: str, result_count: int) -> bool:
         """记录搜索历史
@@ -156,14 +170,15 @@ class DatabaseManager:
         Returns:
             bool: 操作是否成功
         """
+        self._init_connection()
         sql = 'INSERT INTO search_history (keyword, result_count) VALUES (?, ?)'
         try:
-            self.cursor.execute(sql, (keyword, result_count))
-            self.conn.commit()
+            self._local.cursor.execute(sql, (keyword, result_count))
+            self._local.conn.commit()
             return True
         except Exception as e:
             logger.error(f"记录搜索历史失败: {e}")
-            self.conn.rollback()
+            self._local.conn.rollback()
             return False
     
     def get_search_history(self, limit: int = 10) -> List[Tuple[Any, ...]]:
@@ -175,15 +190,19 @@ class DatabaseManager:
         Returns:
             List[Tuple[Any, ...]]: 搜索历史列表
         """
+        self._init_connection()
         sql = 'SELECT * FROM search_history ORDER BY search_time DESC LIMIT ?'
-        self.cursor.execute(sql, (limit,))
-        return self.cursor.fetchall()
+        self._local.cursor.execute(sql, (limit,))
+        return self._local.cursor.fetchall()
     
     def close(self):
         """关闭数据库连接"""
-        self.cursor.close()
-        self.conn.close()
-        logger.debug("数据库连接已关闭")
+        if hasattr(self._local, 'conn') and self._local.conn is not None:
+            self._local.cursor.close()
+            self._local.conn.close()
+            self._local.conn = None
+            self._local.cursor = None
+            logger.debug(f"线程 {threading.get_ident()} 的数据库连接已关闭")
 
 # 单例模式，确保整个应用中只有一个数据库连接
 _db_instance = None
