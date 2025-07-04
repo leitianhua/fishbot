@@ -1,0 +1,24 @@
+# 关键字检测插件配置文件
+
+# 关键字规则列表
+[[rules]]
+keywords = ["价格", "多少钱", "便宜点"]
+response = "价格如商品所示，特殊情况可以私聊商量。"
+
+[[rules]]
+keywords = ["发货", "什么时候到", "几天", "发顺丰"]
+response = "付款后立即发货，一般1-3天到达。"
+
+[[rules]]
+keywords = ["保修", "售后", "包退换"]
+response = "本店所有商品支持7天无理由退换，15天内故障包修。"
+
+[[rules]]
+keywords = ["有没有资源", "要资源", "资源怎么下载"]
+action = "search_resource"
+query = "资源下载教程"
+
+[[rules]]
+keywords = ["人工", "客服"]
+action = "custom_plugin"
+plugin_name = "auto_notice" 
