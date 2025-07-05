@@ -62,6 +62,7 @@ class ResourceSearchPlugin(PluginBase):
         search_keyword = remove_prefix(message, ["搜", "搜索"]).strip()
         
         try:
+            await chat_bot.send_message("🔍正在获取资源，请稍等...")
             # 调用核心搜索功能
             results = self.core.search_and_store(search_keyword)
             
