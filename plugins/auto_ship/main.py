@@ -1,7 +1,7 @@
 """
 闲鱼助手 - 自动发货插件
 
-检测付款信息并自动发货
+负责检测付款状态并自动发货
 """
 
 import os
@@ -17,10 +17,39 @@ class AutoShipPlugin(PluginBase):
     """自动发货插件类"""
     
     name = "auto_ship"  # 插件名称
-    description = "检测付款信息并自动发货"  # 插件描述
+    description = "检测付款状态并自动发货"  # 插件描述
     version = "1.0.0"  # 插件版本
     author = "闲鱼助手"  # 插件作者
-    priority = 900  # 插件优先级，最高优先级
+    priority = 900  # 插件优先级 - 最高优先级
+
+    def __init__(self):
+        super().__init__()
+        # 加载配置
+        self.config = self.load_config()
+
+    def load_config(self):
+        """加载配置"""
+        # 配置文件路径
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.toml")
+
+        # 默认配置
+        default_config = {
+            "auto_ship_text": "【自动发货】"
+        }
+
+        # 如果有配置文件则加载
+        if os.path.exists(config_path):
+            try:
+                import tomllib
+                with open(config_path, "rb") as f:
+                    config = tomllib.load(f)
+                logger.info(f"已加载自动发货插件配置")
+                return config
+            except Exception as e:
+                logger.error(f"加载自动发货插件配置失败: {e}")
+
+        logger.warning("使用默认自动发货插件配置")
+        return default_config
     
     async def handle_message(self, chat_bot, message, context=None, **kwargs):
         """处理消息
@@ -50,8 +79,12 @@ class AutoShipPlugin(PluginBase):
             return False
             
         # 发送自动发货内容
-        ship_text = f"【自动发货】: \n{buy_success_replies}"
+        auto_ship_text = self.config.get("auto_ship_text", "【自动发货】")
+        ship_text = f"{auto_ship_text}: \n{buy_success_replies}"
         await chat_bot.send_message(ship_text)
         logger.info(f"已自动发货: {ship_text}")
         
-        return True 
+        # 重置自动发货标志
+        chat_bot.auto_ship_required = False
+
+        return True

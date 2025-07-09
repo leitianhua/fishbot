@@ -1,0 +1,24 @@
+# 闲鱼助手主配置文件
+
+[browser]
+# 用户数据目录和浏览器路径
+user_data_dir = "user_data/大号"
+executable_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+
+[database]
+# 数据库路径
+db_path = "fishbot.db"
+
+[system]
+# 自动发货关键字
+auto_ship_text = "【自动发货】"
+# 转人工关键字
+auto_notice_text = "转人工"
+# 页面刷新间隔(小时)
+refresh_interval = 12
+
+[logging]
+# 日志级别: TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, CRITICAL
+level = "DEBUG"
+# 日志保留天数
+retention_days = 7

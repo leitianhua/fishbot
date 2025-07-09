@@ -49,7 +49,7 @@ class ResourceSearchPlugin(PluginBase):
         
         # 处理搜索指令
         if not any(message.startswith(prefix) for prefix in ["搜", "搜索"]):
-            logger.debug("未匹配前缀")
+            logger.info("未匹配前缀")
             return False
 
         # 移除前缀，获取搜索内容

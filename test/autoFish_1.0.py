@@ -27,7 +27,7 @@ user_data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "user_d
 executable_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 # 数据库路径
-db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "items.db")
+db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fishbot.db")
 
 # 自动发货内容匹配
 auto_ship_text = '【自动发货】'

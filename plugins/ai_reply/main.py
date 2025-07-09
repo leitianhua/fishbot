@@ -7,6 +7,7 @@
 import requests
 import os
 import sys
+import re
 from loguru import logger
 
 # 导入基类
@@ -37,6 +38,12 @@ class AIReplyPlugin(PluginBase):
         self.api_key = '0e1ec3fdad241a16189b54ef6de10e96.P951D07Cn2Cw7lIu'
         self.api_url = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
         self.model = 'GLM-4-Flash'
+        self.system_prompt = """不需要引导语句。不需要任何前缀。
+            你现在的身份是闲鱼二手交易平台的卖家，你需要尽可能模仿真实的人回答客户的问题，并吸引客户下单，你需要根据商品介绍回答问题，需要简洁的回答
+            商品价格：{price}
+            商品介绍：{description}
+            其他说明：{other}
+            """
         
         # 如果有配置文件则加载
         if os.path.exists(config_path):
@@ -47,9 +54,37 @@ class AIReplyPlugin(PluginBase):
                 self.api_key = config.get("api", {}).get("key", self.api_key)
                 self.api_url = config.get("api", {}).get("url", self.api_url)
                 self.model = config.get("api", {}).get("model", self.model)
+                
+                # 加载自定义系统提示词
+                if "system_prompt" in config:
+                    self.system_prompt = config.get("system_prompt")
+                
                 logger.info(f"已加载AI回复插件配置，模型: {self.model}")
             except Exception as e:
                 logger.error(f"加载AI回复插件配置失败: {e}")
+    
+    def format_system_prompt(self, variables):
+        """格式化系统提示词，替换变量
+        
+        Args:
+            variables: 变量字典
+            
+        Returns:
+            格式化后的系统提示词
+        """
+        prompt = self.system_prompt
+        
+        # 使用正则表达式查找所有变量占位符
+        placeholders = re.findall(r'\{([^}]+)\}', prompt)
+        
+        # 替换变量
+        for placeholder in placeholders:
+            if placeholder in variables:
+                prompt = prompt.replace(f"{{{placeholder}}}", str(variables[placeholder]))
+            else:
+                logger.warning(f"系统提示词中的变量 {{{placeholder}}} 未找到对应值")
+        
+        return prompt
     
     async def handle_message(self, chat_bot, message, context=None, **kwargs):
         """处理消息
@@ -73,15 +108,27 @@ class AIReplyPlugin(PluginBase):
         # 获取消息列表
         messages = context.get("messages", []) if context else []
         
+        # 准备变量字典
+        variables = {
+            "price": getattr(chat_bot, "cur_shop_price", "未知价格"),
+            "description": getattr(chat_bot, "cur_shop_desc", "未知描述"),
+            "other": getattr(chat_bot, "cur_shop_other", ""),
+            "shop_name": getattr(chat_bot, "cur_shop_name", "未知商品"),
+            "user_name": context.get("user_name", "客户") if context else "客户",
+            "message": message
+        }
+        
+        # 添加商品自定义变量
+        if hasattr(chat_bot, "cur_shop_custom_vars") and isinstance(chat_bot.cur_shop_custom_vars, dict):
+            variables.update(chat_bot.cur_shop_custom_vars)
+        
+        # 格式化系统提示词
+        formatted_prompt = self.format_system_prompt(variables)
+        
         # 构建系统提示
         system_message = {
             "role": "system",
-            "content": f"""不需要引导语句。不需要任何前缀。
-            你现在的身份是闲鱼二手交易平台的卖家，你需要尽可能模仿真实的人回答客户的问题，并吸引客户下单，你需要根据商品介绍回答问题，需要简洁的回答
-            商品价格：{chat_bot.cur_shop_price}
-            商品介绍：{chat_bot.cur_shop_desc}
-            其他说明：{chat_bot.cur_shop_other}
-            """
+            "content": formatted_prompt
         }
         
         # 添加系统提示
@@ -111,4 +158,4 @@ class AIReplyPlugin(PluginBase):
             
         except requests.RequestException as e:
             logger.error(f'请求AI接口失败: {e}')
-            return False 
+            return False

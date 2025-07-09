@@ -2,72 +2,20 @@
 # -*- coding: utf-8 -*-
 
 """
-闲鱼助手 - 自动化处理闲鱼消息的工具
+闲鱼助手 - 聊天机器人核心模块
 """
 
 import os
 import re
-import sys
 import json
-import time
 import asyncio
-import sqlite3
+import importlib.util
 from collections import deque
 from urllib.parse import unquote
 from loguru import logger
-from pathlib import Path
 
-# 初始化路径
-BASE_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = BASE_DIR / "main_config.toml"
-DB_PATH = BASE_DIR / "fishbot.db"
-LOGS_DIR = BASE_DIR / "logs"
-PLUGINS_DIR = BASE_DIR / "plugins"
-
-# 确保日志目录存在
-LOGS_DIR.mkdir(exist_ok=True)
-
-# 加载配置
-def load_config():
-    """加载主配置文件"""
-    try:
-        import tomllib
-        if CONFIG_PATH.exists():
-            with open(CONFIG_PATH, "rb") as f:
-                return tomllib.load(f)
-    except Exception as e:
-        logger.error(f"加载配置文件失败: {e}")
-    return {}
-
-# 全局配置
-config = load_config()
-
-# 配置日志
-logger.remove()  # 移除默认处理器
-LOG_LEVEL = config.get("logging", {}).get("level", "INFO")
-logger.add(sys.stderr, level=LOG_LEVEL, 
-           format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
-logger.add(LOGS_DIR / "autofish_{time:YYYY-MM-DD}.log", rotation="00:00", 
-           retention=config.get("logging", {}).get("retention_days", 7), level=LOG_LEVEL, encoding="utf-8")
-logger.info(f"日志级别设置为: {LOG_LEVEL}")
-
-# 浏览器配置
-USER_DATA_DIR = BASE_DIR / config.get("browser", {}).get("user_data_dir", "user_data/大号")
-EXECUTABLE_PATH = config.get("browser", {}).get("executable_path", r"C:\Program Files\Google\Chrome\Application\chrome.exe")
-
-# 检查依赖
-try:
-    from playwright.async_api import async_playwright
-except ImportError:
-    logger.error("未安装playwright，请使用pip install playwright安装")
-    sys.exit(1)
-
-try:
-    import aiohttp
-except ImportError:
-    logger.error("未安装aiohttp，请使用pip install aiohttp安装")
-    sys.exit(1)
-
+from config import config, PLUGINS_DIR
+from database import get_shop_info, save_shop_info
 
 class ChatBot:
     """闲鱼聊天机器人类"""
@@ -141,6 +89,10 @@ class ChatBot:
         if not self.cur_shop_desc:
             logger.debug("未获取到商品信息，跳过本次回复")
             return
+        
+        # 每次处理消息前重新从数据库加载商品插件配置
+        if self.cur_item_id:
+            self.reload_shop_plugins_config()
 
         self.is_processing_message = True
         self.is_replying = True
@@ -320,20 +272,17 @@ class ChatBot:
                 logger.debug(f"提取到的 itemId: {item_id}")
                 self.cur_item_id = item_id
 
-                # 检查数据库中是否有该商品信息
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                cursor.execute("SELECT shop_name, shop_price, shop_desc, shop_other, buy_success_replies, plugins_config FROM xianyu_shop WHERE item_id = ?", (item_id,))
-                result = cursor.fetchone()
-                conn.close()
-
-                if result:
-                    self.cur_shop_name = result[0]
-                    self.cur_shop_price = result[1]
-                    self.cur_shop_desc = result[2]
-                    self.cur_shop_other = result[3]
-                    self.cur_shop_buy_success_replies = result[4]
-                    self.cur_plugins_config = json.loads(result[5]) if result[5] else []
+                # 从数据库获取商品信息
+                shop_info = get_shop_info(item_id)
+                
+                if shop_info:
+                    # 设置商品信息
+                    self.cur_shop_name = shop_info["shop_name"]
+                    self.cur_shop_price = shop_info["shop_price"]
+                    self.cur_shop_desc = shop_info["shop_desc"]
+                    self.cur_shop_other = shop_info["shop_other"]
+                    self.cur_shop_buy_success_replies = shop_info["buy_success_replies"]
+                    self.cur_plugins_config = shop_info["plugins_config"]
                     self.is_get_shop = True
                     logger.info(f"从数据库获取到商品信息: {self.cur_shop_name}")
                 else:
@@ -344,8 +293,19 @@ class ChatBot:
                     self.cur_shop_desc = "未知描述"
                     self.cur_shop_other = ""
                     self.cur_shop_buy_success_replies = ""
-                    self.cur_plugins_config = ["auto_ship", "manual_service", "ai_reply"]
+                    self.cur_plugins_config = ["keyword", "auto_ship", "manual_service", "ai_reply"]
                     self.is_get_shop = True
+                    
+                    # 保存到数据库
+                    shop_info = {
+                        "shop_name": self.cur_shop_name,
+                        "shop_price": self.cur_shop_price,
+                        "shop_desc": self.cur_shop_desc,
+                        "shop_other": self.cur_shop_other,
+                        "buy_success_replies": self.cur_shop_buy_success_replies,
+                        "plugins_config": self.cur_plugins_config
+                    }
+                    save_shop_info(item_id, shop_info)
 
     def register_plugin(self, plugin_name, plugin_func, priority=100):
         """注册一个插件
@@ -376,7 +336,6 @@ class ChatBot:
             return None
             
         try:
-            logger.info(f"执行插件 {plugin_name}")
             result = await self.plugins[plugin_name]["handler"](self, *args, **kwargs)
             return result
         except Exception as e:
@@ -477,108 +436,21 @@ class ChatBot:
                     
         logger.info(f"已加载 {len(self.plugins)} 个插件")
 
-
-async def init_database():
-    """初始化数据库"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS xianyu_shop (
-            item_id TEXT PRIMARY KEY,
-            shop_name TEXT,
-            shop_price TEXT,
-            shop_desc TEXT,
-            shop_other TEXT,
-            buy_success_replies TEXT,
-            plugins_config TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
-    logger.info("数据库初始化完成")
-
-
-async def main():
-    """主函数"""
-    async with async_playwright() as p:
-        # 启动浏览器
-        browser = await p.chromium.launch_persistent_context(
-            headless=False,
-            args=['--start-maximized', '--disable-blink-features=AutomationControlled'],
-            user_data_dir=USER_DATA_DIR,
-            executable_path=EXECUTABLE_PATH,
-        )
-        page = await browser.new_page()
-
-        # 创建聊天机器人实例
-        chat_bot = ChatBot(page)
-        
-        # 异步加载插件
+    def reload_shop_plugins_config(self):
+        """重新从数据库加载商品插件配置"""
         try:
-            await chat_bot.load_plugins()
-            logger.info(f"插件加载成功，共 {len(chat_bot.plugins)} 个插件")
+            from database import get_shop_info
+            
+            # 从数据库获取最新的商品信息
+            shop_info = get_shop_info(self.cur_item_id)
+            
+            if shop_info and "plugins_config" in shop_info:
+                # 更新插件配置
+                old_config = self.cur_plugins_config
+                self.cur_plugins_config = shop_info["plugins_config"]
+                
+                # 如果配置有变化，记录日志
+                if old_config != self.cur_plugins_config:
+                    logger.info(f"商品 {self.cur_item_id} 插件配置已更新: {old_config} -> {self.cur_plugins_config}")
         except Exception as e:
-            logger.error(f"加载插件失败: {e}")
-
-        # 监听请求
-        page.on("request", chat_bot.handle_request)
-        
-        # 打开闲鱼
-        await page.goto("https://www.goofish.com/im", wait_until="networkidle")
-
-        # 初始化数据库
-        await init_database()
-
-        # 主循环
-        last_refresh_time = time.time()
-        refresh_interval = config.get("system", {}).get("refresh_interval", 12) * 3600  # 默认12小时，单位：秒
-
-        while True:
-            try:
-                current_time = time.time()
-                if current_time - last_refresh_time >= refresh_interval:
-                    logger.info(f'已运行{refresh_interval//3600}小时，准备刷新页面...')
-                    # 模拟按下 F5 键
-                    await page.evaluate("location.reload()")
-                    # 等待页面加载完成
-                    await page.wait_for_load_state('networkidle')
-                    # 更新刷新时间
-                    last_refresh_time = time.time()
-                    logger.info('页面刷新完成')
-                    continue
-
-                logger.debug('开始新的检查循环')
-                if chat_bot.is_replying or chat_bot.is_processing_message:
-                    logger.info('正在处理或回复消息，等待5秒后继续循环')
-                    await asyncio.sleep(5)
-                    continue
-
-                try:
-                    # 检查是否有打开的对话框
-                    conversation_open = await page.query_selector('#message-list-scrollable')
-                    if conversation_open:
-                        logger.debug('检测到打开的对话框')
-                        await chat_bot.check_and_reply_new_messages()
-
-                        if not chat_bot.is_replying and not chat_bot.is_processing_message:
-                            logger.debug('当前对话没有新消息，检查其他对话的红点')
-                            await chat_bot.check_new_message_badge()
-                    else:
-                        logger.debug('当前没有打开的对话框，检查新消息红点')
-                        await chat_bot.check_new_message_badge()
-                except Exception as e:
-                    logger.error(f"处理消息时发生错误: {e}")
-                    await asyncio.sleep(3)  # 出错后等待一小段时间
-                    continue
-
-            except Exception as e:
-                logger.error(f"主循环发生错误: {e}")
-                await asyncio.sleep(5)  # 发生错误时等待较长时间
-                continue
-
-            logger.debug('等待3秒后继续下一次循环')
-            await asyncio.sleep(3)
-
-
-if __name__ == '__main__':
-    asyncio.run(main())
+            logger.error(f"重新加载商品插件配置失败: {e}")

@@ -1,0 +1,17 @@
+# 通知插件配置文件
+
+[dingding]
+enabled = true
+webhook = "https://oapi.dingtalk.com/robot/send?access_token=5c22c63ba1a742a9a09eee52b551a02c6059230a777835e89e237b87306c63b4"
+keyword = "【闲鱼助手】"
+
+[wxpusher]
+enabled = true
+token = "AT_jQkJqc1f9R13kVVdjwxFNcG4pWLNerOq"
+uids = ["UID_DebxzN3NJVgefxEhL7FLq5tzPWbg"]
+
+# 消息冷却时间(秒)，在此时间内相同消息不会重复发送
+cooldown = 600
+
+# 是否在插件启动时发送通知
+startup_notice = true

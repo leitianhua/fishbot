@@ -162,14 +162,15 @@ class ResourceCore:
     # 每分钟清除过期资源
     def clear_expired_resources(self):
         """清除过期资源的线程函数"""
+        # 创建一个Quark实例，只创建一次
+        quark_instance = Quark(self.conf)
+        logger.info("过期资源清理线程已启动")
+        
         while True:
             try:
                 # 在每次循环中重新获取数据库实例，确保线程安全
                 from .database import get_db_instance
                 db_instance = get_db_instance()
-                
-                # 创建新的Quark实例
-                quark_instance = Quark(self.conf)
                 
                 # 查询过期资源
                 expired_resources = db_instance.find_expired_resources(self.expired_time, "quark")

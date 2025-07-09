@@ -183,7 +183,7 @@ class DatabaseManager(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    db_path = "items.db"  # 数据库路径
+    db_path = "../fishbot.db"  # 数据库路径
     window = DatabaseManager(db_path)
     window.show()
     sys.exit(app.exec())
