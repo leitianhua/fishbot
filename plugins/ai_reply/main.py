@@ -54,10 +54,7 @@ class AIReplyPlugin(PluginBase):
                 self.api_key = config.get("api", {}).get("key", self.api_key)
                 self.api_url = config.get("api", {}).get("url", self.api_url)
                 self.model = config.get("api", {}).get("model", self.model)
-                
-                # 加载自定义系统提示词
-                if "system_prompt" in config:
-                    self.system_prompt = config.get("system_prompt")
+                self.system_prompt = config.get("api", {}).get("system_prompt")
                 
                 logger.info(f"已加载AI回复插件配置，模型: {self.model}")
             except Exception as e:
